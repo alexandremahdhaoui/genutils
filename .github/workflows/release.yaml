@@ -1,0 +1,23 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+      - release/**
+
+jobs:
+  release:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Setup Git
+        uses: alexandremahdhaoui/setup-git@v0.0.3
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      - uses: alexandremahdhaoui/release@v0.2.2
+        with:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}

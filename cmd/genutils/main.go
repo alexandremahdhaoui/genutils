@@ -24,6 +24,7 @@ import (
 	"github.com/dave/jennifer/jen"
 	"github.com/spf13/cobra"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -57,16 +58,13 @@ Author: Alexandre Mahdhaoui
 	initCmdUsage     = `The command below will initialize
 a new cmd under "./cmd/<CMD_NAME>/main.go"
 
-	genutils \
-	--cmd <CMD_NAME>
+	genutils --cmd <CMD_NAME>
 
 The command below will initialize a new cmd
 and 2 generators. The 2 generators will be 
 wired in the cmd.
 
-	genutils \
-	--cmd mycmd \
-	--generators=myGenerator:./some/pkg,anotherGenerator:./an/other/pkg
+	genutils --cmd mycmd --generators=myGenerator:./some/pkg,anotherGenerator:./an/other/pkg
 `
 
 	initGeneratorsFlag      = "generators"
@@ -78,9 +76,7 @@ Be aware this command alone will
 not setup the generator in your 
 cmd.
 
-	genutils \
-	--generators \
-	"<GENERATOR_NAME>:<PATH>,<ANOTHER_GEN_NAME>:<MAYBE_ANOTHER_PATH>"
+	genutils --generators "<GENERATOR_NAME>:<PATH>,<ANOTHER_GEN_NAME>:<MAYBE_ANOTHER_PATH>"
 `
 )
 
@@ -156,37 +152,13 @@ type (
 )
 
 func parseCmdAndValidate(s string) (*cmdFlag, error) {
-	parseCmdErr := errors.Join(
-		fmt.Errorf("received: %q", s),
-		newInvalidFlagInputErr(initCmdFlag),
-		fmt.Errorf("usage: %s", initCmdUsage))
-
 	if s == "" {
 		return nil, nil
 	}
 
-	sl := strings.Split(s, ":")
-	if len(sl) != 2 {
-		return nil, errors.Join(errors.New("expect 2 sub-arguments separated by a colon (\":\")"), parseCmdErr)
-	}
-
-	cmdName := sl[0]
-	if cmdName == "" {
-		return nil, errors.Join(errors.New("name cannot be empty"), parseCmdErr)
-	}
-
-	cmdPath := sl[1]
-	if cmdPath == "" {
-		return nil, errors.Join(errors.New("path cannot be empty"), parseCmdErr)
-	}
-
-	if err := fileShouldNotExist(cmdPath); err != nil {
-		return nil, errors.Join(err, parseCmdErr)
-	}
-
 	return &cmdFlag{
-		name: cmdName,
-		path: cmdPath,
+		name: s,
+		path: fmt.Sprintf("cmd/%s", s),
 	}, nil
 }
 
@@ -277,13 +249,15 @@ func generateCmdWithGenerators(cmd cmdFlag, generators []generatorFlag) error {
 
 		//		WithGenerator(cmdGeneratorName, CmdGenerator{}).
 		//		WithGenerator(generatorGeneratorName, GeneratorGenerator{}).
-		genutilsNew = genutilsNew.Dot("WithGenerator").Call(jen.Id(genName), jen.Id(genStruct).Values())
+		genutilsNew = genutilsNew.
+			Dot("WithGenerator").
+			Call(jen.Id(genName), jen.Qual(g.path, genStruct).Values())
 	}
 
 	consts = append([]jen.Code{
 		jen.Id("name").Op("=").Lit(cmd.name),
 		jen.Id("description").Op("=").Lit("TODO: Please write a description here."),
-		jen.Id("example").Op("=").Lit(`TODO: Please write an example here.`),
+		jen.Id("helper").Op("=").Lit(`TODO: Please write an example here.`),
 	}, consts...)
 
 	//	const (
@@ -298,19 +272,27 @@ func generateCmdWithGenerators(cmd cmdFlag, generators []generatorFlag) error {
 		Dot("Apply").Call().
 		Dot("Run").Call()
 
-	f := jen.NewFilePath(cmd.path)
-	f.Add(constBlock, genutilsNew)
+	f := jen.NewFilePath(cmd.path) //nolint:varnamelen
 
+	f.Add(constBlock).Op(";").Func().Id("main").Params().Block(
+		genutilsNew,
+	)
+
+	return writeFile(f, cmd.path, "main.go")
+}
+
+func writeFile(f *jen.File, pathToJoin ...string) error {
 	buf := &bytes.Buffer{}
 	if err := f.Render(buf); err != nil {
 		return err
 	}
 
-	if err := os.WriteFile(fmt.Sprintf("%s/main.go", cmd.path), buf.Bytes(), 0644); err != nil { //nolint:gofumpt
+	fp := filepath.Join(pathToJoin...)
+	if err := os.MkdirAll(filepath.Dir(fp), 0755); err != nil { //nolint:gofumpt
 		return err
 	}
 
-	return nil
+	return os.WriteFile(fp, buf.Bytes(), 0644) //nolint:gosec,gofumpt
 }
 
 // GENERATE GENERATOR --------------------------------------------------------------------------------------------------
@@ -322,7 +304,7 @@ func generateGenerator(generators []generatorFlag) error {
 //nolint:funlen
 func generateGeneratorWithCmdName(generators []generatorFlag, cmdName string) error {
 	for _, g := range generators {
-		f := jen.NewFilePath(g.path)
+		f := jen.NewFilePath(g.path) //nolint:varnamelen
 
 		marker := g.name
 		if cmdName != "" {
@@ -382,15 +364,13 @@ func generateGeneratorWithCmdName(generators []generatorFlag, cmdName string) er
 			Error().
 			Block(
 				jen.If(
-					jen.Id("err"),
-					jen.Op(":="),
-					jen.Qual(markersPath, "RegisterAll").Call(jen.Id("into"), jen.Id(markerDefName)),
-					jen.Op(";"),
-					jen.Id("err"), jen.Op("!="), jen.Nil(),
+					jen.Id("err").Op(":=").
+						Qual(markersPath, "RegisterAll").Call(jen.Id("into"), jen.Id(markerDefName)),
+					jen.Id("err").Op("!=").Nil(),
 				).Block(
 					jen.Return(jen.Error()),
 				),
-				jen.Id("into").Id("AddHelp").
+				jen.Id("into").Dot("AddHelp").
 					Call(
 						jen.Id(markerDefName),
 						jen.Qual(markersPath, "SimpleHelp").Call(jen.Lit("object"), jen.Lit(""))),
@@ -422,7 +402,6 @@ func generateGeneratorWithCmdName(generators []generatorFlag, cmdName string) er
 			jen.Return(jen.Id("err")))
 
 		f.Func().
-			Params().
 			Id("RegisterMarkers").
 			Params(
 				jen.Id("ctx"),
@@ -436,7 +415,7 @@ func generateGeneratorWithCmdName(generators []generatorFlag, cmdName string) er
 						Range().Id("ctx").Dot("Roots"),
 				).Block(
 					jen.Id("root").Dot("NeedTypesInfo"),
-					jen.Id("markerSet").Id("err").Op(":=").Qual(markersPath, "PackageMarkers").
+					jen.List(jen.Id("markerSet"), jen.Err()).Op(":=").Qual(markersPath, "PackageMarkers").
 						Call(jen.Id("ctx").Dot("Collector"), jen.Id("root")),
 					ifErrNotNilReturnErr,
 					jen.Id("markerValues").Op(":=").
@@ -448,13 +427,8 @@ func generateGeneratorWithCmdName(generators []generatorFlag, cmdName string) er
 				jen.Return(jen.Nil()),
 			)
 
-		buf := &bytes.Buffer{}
-		if err := f.Render(buf); err != nil {
-			return err
-		}
-
-		err := os.WriteFile(fmt.Sprintf("%s/%s.go", g.path, strings.ToLower(g.name)), buf.Bytes(), 0644) //nolint:gofumpt
-		if err != nil {
+		filename := fmt.Sprintf("%s.go", strings.ToLower(g.name))
+		if err := writeFile(f, g.path, filename); err != nil {
 			return err
 		}
 	}

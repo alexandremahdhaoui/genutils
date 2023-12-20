@@ -81,7 +81,7 @@ cmd.
 )
 
 var (
-	Version        = "<unversioned>"
+	version        = "<unversioned>"
 	initCmd        *string
 	initGenerators *string
 )
@@ -93,7 +93,7 @@ func main() {
 		Long:    description,
 		Example: example,
 		RunE:    runE,
-		Version: Version,
+		Version: version,
 	}
 
 	initCmd = new(string)

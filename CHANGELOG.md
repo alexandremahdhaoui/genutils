@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/alexandremahdhaoui/genutils/compare/v1.0.1...v1.0.2) (2023-12-20)
+
+
+### Bug Fixes
+
+* edit cmd to version ([fd80188](https://github.com/alexandremahdhaoui/genutils/commit/fd80188a44ec2a7b2e6d250565137283a3e2368b))
+
 ## [1.0.1](https://github.com/alexandremahdhaoui/genutils/compare/v1.0.0...v1.0.1) (2023-12-19)
 
 

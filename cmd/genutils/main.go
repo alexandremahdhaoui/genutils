@@ -25,6 +25,7 @@ import (
 	"github.com/spf13/cobra"
 	"os"
 	"path/filepath"
+	"sigs.k8s.io/controller-tools/pkg/loader"
 	"strings"
 )
 
@@ -125,11 +126,11 @@ func runE(_ *cobra.Command, _ []string) error {
 	case cmd != nil && len(generators) == 0:
 		return generateCmd(*cmd)
 	case cmd != nil:
-		if err = generateCmdWithGenerators(*cmd, generators); err != nil {
+		if err = generateGeneratorWithCmdName(generators, cmd.name); err != nil {
 			return err
 		}
 
-		if err = generateGeneratorWithCmdName(generators, cmd.name); err != nil {
+		if err = generateCmdWithGenerators(*cmd, generators); err != nil {
 			return err
 		}
 
@@ -247,11 +248,20 @@ func generateCmdWithGenerators(cmd cmdFlag, generators []generatorFlag) error {
 		//	)
 		consts = append(consts, jen.Id(genName).Op("=").Lit(g.name))
 
-		//		WithGenerator(cmdGeneratorName, CmdGenerator{}).
-		//		WithGenerator(generatorGeneratorName, GeneratorGenerator{}).
+		roots, err := loader.LoadRoots(g.path)
+		if err != nil {
+			return err
+		}
+
+		if len(roots) == 0 {
+			return fmt.Errorf("expected at least on package located in %q", g.path)
+		}
+
+		//		WithGenerator(cmdGeneratorName, cmd.CmdGenerator{}).
+		//		WithGenerator(generatorGeneratorName, cmd.GeneratorGenerator{}).
 		genutilsNew = genutilsNew.
 			Dot("WithGenerator").
-			Call(jen.Id(genName), jen.Qual(g.path, genStruct).Values())
+			Call(jen.Id(genName), jen.Qual(roots[0].String(), genStruct).Values())
 	}
 
 	consts = append([]jen.Code{
@@ -313,7 +323,7 @@ func generateGeneratorWithCmdName(generators []generatorFlag, cmdName string) er
 
 		markerLit := jen.Lit(marker)
 
-		nameTitle := genutils.Title(g.name)
+		generatorNameTitle := fmt.Sprintf("%sGenerator", genutils.Title(g.name))
 		markersPath := "sigs.k8s.io/controller-tools/pkg/markers"
 		genallPath := "sigs.k8s.io/controller-tools/pkg/genall"
 
@@ -333,12 +343,12 @@ func generateGeneratorWithCmdName(generators []generatorFlag, cmdName string) er
 					Call(
 						markerLit,
 						jen.Qual(markersPath, "DescribesType"),
-						jen.Id(nameTitle).Values(),
+						jen.Id(generatorNameTitle).Values(),
 					),
 			)
 
 		f.Type().
-			Id(nameTitle).
+			Id(generatorNameTitle).
 			Struct(
 				jen.Id("HeaderFile").String().Tag(omitemptyMarkerTag),
 				jen.Id("Year").String().Tag(omitemptyMarkerTag),
@@ -355,25 +365,26 @@ func generateGeneratorWithCmdName(generators []generatorFlag, cmdName string) er
 		// }
 
 		f.Func().
-			Params().
+			Params(jen.Id(generatorNameTitle)).
 			Id("RegisterMarkers").
-			Params(
-				jen.Id("into"),
-				jen.Add(jen.Op("*"), jen.Qual(markersPath, "Registry")),
-			).
+			Params(jen.Id("into").Add(jen.Op("*"), jen.Qual(markersPath, "Registry"))).
 			Error().
 			Block(
 				jen.If(
-					jen.Id("err").Op(":=").
-						Qual(markersPath, "RegisterAll").Call(jen.Id("into"), jen.Id(markerDefName)),
-					jen.Id("err").Op("!=").Nil(),
+					jen.Id("err").
+						Op(":=").
+						Qual(markersPath, "RegisterAll").
+						Call(jen.Id("into"), jen.Id(markerDefName)),
+					jen.Id("err").Op("!=").
+						Nil(),
 				).Block(
-					jen.Return(jen.Error()),
+					jen.Return(jen.Err()),
 				),
 				jen.Id("into").Dot("AddHelp").
 					Call(
 						jen.Id(markerDefName),
-						jen.Qual(markersPath, "SimpleHelp").Call(jen.Lit("object"), jen.Lit(""))),
+						jen.Qual(markersPath, "SimpleHelp").Call(jen.Lit("object"), jen.Lit("")),
+					),
 				jen.Return(jen.Nil()),
 			)
 
@@ -402,11 +413,9 @@ func generateGeneratorWithCmdName(generators []generatorFlag, cmdName string) er
 			jen.Return(jen.Id("err")))
 
 		f.Func().
-			Id("RegisterMarkers").
-			Params(
-				jen.Id("ctx"),
-				jen.Add(jen.Op("*"), jen.Qual(genallPath, "GenerationContext")),
-			).
+			Params(jen.Id("g").Id(generatorNameTitle)).
+			Id("Generate").
+			Params(jen.Id("ctx").Add(jen.Op("*"), jen.Qual(genallPath, "GenerationContext"))).
 			Error().
 			Block(
 				jen.Comment("TODO: ADD YOUR CODE HERE"),
@@ -414,7 +423,7 @@ func generateGeneratorWithCmdName(generators []generatorFlag, cmdName string) er
 					jen.Id("_").Op(",").Id("root").Op(":=").
 						Range().Id("ctx").Dot("Roots"),
 				).Block(
-					jen.Id("root").Dot("NeedTypesInfo"),
+					jen.Id("root").Dot("NeedTypesInfo").Call(),
 					jen.List(jen.Id("markerSet"), jen.Err()).Op(":=").Qual(markersPath, "PackageMarkers").
 						Call(jen.Id("ctx").Dot("Collector"), jen.Id("root")),
 					ifErrNotNilReturnErr,

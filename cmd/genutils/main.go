@@ -282,7 +282,7 @@ func generateCmdWithGenerators(cmd cmdFlag, generators []generatorFlag) error {
 		Dot("Apply").Call().
 		Dot("Run").Call()
 
-	f := jen.NewFilePath(cmd.path) //nolint:varnamelen
+	f := jen.NewFilePathName(cmd.path, "main") //nolint:varnamelen
 
 	f.Add(constBlock).Op(";").Func().Id("main").Params().Block(
 		genutilsNew,

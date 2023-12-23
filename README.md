@@ -4,8 +4,9 @@ Utilities for writing Go code generators.
 
 ## Getting Started
 
-The `genutils` command line tool is used to .
-Run the following command to create a generator cmd, that can be used to generate code using 2 markers.
+The `genutils` command line tool is used to generate code for writing generators.
+Run the following command to initialize a generator command line tool, that will be used to generate code using 2
+markers.
 
 ```shell
 go run github.com/alexandremahdhaoui/genutils/cmd/genutils@latest --cmd gencmd --generators="yourgen:./pkg/gen,anothergen:./pkg/gen"
@@ -89,8 +90,18 @@ func (g YourgenGenerator) Generate(ctx *genall.GenerationContext) error {
 
 ## Use your new generator
 
+### Use it on a struct
+
 ```go
 //+gencmd:yourgen
 
 type YourStruct struct{}
+```
+
+### Execute your generator
+
+```go
+//go:generate go run github.com/username/repo/cmd/gencmd@latest
+
+package yourpkg
 ```

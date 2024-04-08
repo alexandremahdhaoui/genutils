@@ -33,13 +33,13 @@ const (
 
 func main() {
 	genutils.
-        New(name).
-        WithDescription(description).
-        WithHelper(helper).
-        WithGenerator(yourgenGeneratorName, gen.YourgenGenerator{}).
-        WithGenerator(anothergenGeneratorName, gen.AnothergenGenerator{}).
-        Apply().
-        Run()
+		New(name).
+		WithDescription(description).
+		WithHelper(helper).
+		WithGenerator(yourgenGeneratorName, gen.YourgenGenerator{}).
+		WithGenerator(anothergenGeneratorName, gen.AnothergenGenerator{}).
+		Apply().
+		Run()
 }
 ```
 
